@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -91,34 +91,33 @@ export default function App() {
   const [data, setData] = useState<AggregateResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const aggregateInFlight = useRef(false);
-  const forecastInFlight = useRef(false);
-
   useEffect(() => {
-    fetchStations(24).then(setStations).catch((e) => setError(String(e)));
+    let cancelled = false;
+    fetchStations(24)
+      .then((next) => { if (!cancelled) setStations(next); })
+      .catch((e) => { if (!cancelled) setError(String(e)); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     // Fetch once per mount (first load / browser refresh) and whenever the
     // user changes a filter. No polling: an idle tab generates zero queries
     // (D1 read conservation, see docs/emergency-d1-mode.md).
     const refresh = async () => {
-      if (cancelled || aggregateInFlight.current) return;
-      aggregateInFlight.current = true;
       setError(null);
       try {
-        const next = await fetchAggregates({ hours, station: selected || undefined });
+        const next = await fetchAggregates({ hours, station: selected || undefined, signal: controller.signal });
         if (!cancelled) setData(next);
       } catch (e) {
-        if (!cancelled) setError(String(e));
-      } finally {
-        aggregateInFlight.current = false;
+        if (!cancelled && !(e instanceof DOMException && e.name === "AbortError")) setError(String(e));
       }
     };
     void refresh();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [hours, selected]);
 
@@ -126,14 +125,10 @@ export default function App() {
     let cancelled = false;
     // Same policy as aggregates: fetch once per mount, no polling.
     const refresh = async () => {
-      if (cancelled || forecastInFlight.current) return;
-      forecastInFlight.current = true;
       try {
         const next = await fetchForecast();
         if (!cancelled && next) setForecast(next);
-      } finally {
-        forecastInFlight.current = false;
-      }
+      } catch (e) { if (!cancelled) setError(String(e)); }
     };
     void refresh();
     return () => {

@@ -7,6 +7,13 @@ import {
   COMPARISON_TOLERANCE_MINUTES,
   getWeatherSourceComparisons,
 } from "../db/comparisons";
+import {
+  EFFECTIVE_SOURCE_PRIORITY,
+  EFFECTIVE_SOURCE_MAX_AGE_MINUTES,
+  type EffectiveCurrentLocation,
+  EFFECTIVE_VALUE_LIMITS,
+  getEffectiveCurrentValues,
+} from "../db/effective-current";
 
 function clampHours(value: string | null): number | undefined {
   if (!value) return undefined;
@@ -111,7 +118,28 @@ export async function handleApi(
 
   if (pathMatches(url, "/api/summary")) {
     const summaries = await getDashboardSummaries(db);
-    return json({ summaries }, 200, origin);
+    let effectiveCurrent: EffectiveCurrentLocation[] = [];
+    try {
+      effectiveCurrent = await getEffectiveCurrentValues(db);
+    } catch (error) {
+      // Keep the existing summaries contract available if the additive
+      // cross-source read fails; the fallback result is best-effort.
+      console.warn("[dashboard] effective current values unavailable", error);
+    }
+    return json(
+      {
+        summaries,
+        effective_current: effectiveCurrent,
+        effective_current_policy: {
+          source_priority: EFFECTIVE_SOURCE_PRIORITY,
+          max_age_minutes: EFFECTIVE_SOURCE_MAX_AGE_MINUTES,
+          physical_limits: EFFECTIVE_VALUE_LIMITS,
+          excluded_variables: ["precipitation_rate", "precipitation_total"],
+        },
+      },
+      200,
+      origin,
+    );
   }
 
   return null;
