@@ -117,6 +117,20 @@ describe("configuration validation", () => {
     expect(() => validateConfig([bad])).toThrow(ConfigValidationError);
   });
 
+  it("rejects a unit incompatible with its canonical field", () => {
+    const bad = {
+      ...baseSource,
+      normalization: {
+        ...baseSource.normalization,
+        fields: {
+          ...baseSource.normalization.fields,
+          temperature: { path: "$.metric.temp", unit: "km/h" },
+        },
+      },
+    };
+    expect(() => validateConfig([bad])).toThrow(/Unsupported unit 'km\/h' for field 'temperature'/);
+  });
+
   it("rejects missing timestamp format", () => {
     const bad = {
       ...baseSource,

@@ -160,10 +160,16 @@ function validateNormalization(
         errors.push(`${where}: field '${field}' has invalid path: ${errMessage(err)}`);
       }
     }
-    try {
-      getUnitConverter(field, fieldConfig.unit, fieldConfig.convert_to);
-    } catch (err) {
-      errors.push(`${where}: field '${field}': ${errMessage(err)}`);
+    if (field === "observed_at") {
+      if (fieldConfig.unit !== undefined || fieldConfig.convert_to !== undefined) {
+        errors.push(`${where}: field 'observed_at' does not support unit conversion`);
+      }
+    } else {
+      try {
+        getUnitConverter(field, fieldConfig.unit, fieldConfig.convert_to);
+      } catch (err) {
+        errors.push(`${where}: field '${field}': ${errMessage(err)}`);
+      }
     }
   }
 

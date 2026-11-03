@@ -147,6 +147,64 @@ describe("normalization", () => {
     expect(obs.solar_radiation).toBeCloseTo(812, 5);
   });
 
+  it("converts configured weather variables to canonical units during normalization", () => {
+    const config: NormalizationConfig = {
+      observation_selector: "$",
+      fields: {
+        observed_at: { path: "$.at", format: "iso8601" },
+        pressure: { path: "$.pressure", unit: "Pa" },
+        wind_speed: { path: "$.wind", unit: "m/s" },
+        wind_gust: { path: "$.gust", unit: "mph" },
+        wind_direction: { path: "$.direction", unit: "rad" },
+        precipitation_rate: { path: "$.rate", unit: "in/hr" },
+        precipitation_total: { path: "$.total", unit: "in" },
+        cloud_cover: { path: "$.cloud", unit: "fraction" },
+        visibility: { path: "$.visibility", unit: "km" },
+        uv_index: { path: "$.uv", unit: "index" },
+      },
+    };
+    const obs = normalizeObservation(
+      {
+        at: "2026-08-19T00:00:00Z",
+        pressure: 101325,
+        wind: 10,
+        gust: 10,
+        direction: Math.PI,
+        rate: 1,
+        total: 1,
+        cloud: 0.5,
+        visibility: 1,
+        uv: 8,
+      },
+      config,
+      { sourceId: "s", locationId: "l" },
+    );
+    expect(obs.pressure).toBeCloseTo(1013.25, 5);
+    expect(obs.wind_speed).toBeCloseTo(36, 5);
+    expect(obs.wind_gust).toBeCloseTo(16.09344, 5);
+    expect(obs.wind_direction).toBeCloseTo(180, 5);
+    expect(obs.precipitation_rate).toBeCloseTo(25.4, 5);
+    expect(obs.precipitation_total).toBeCloseTo(25.4, 5);
+    expect(obs.cloud_cover).toBeCloseTo(50, 5);
+    expect(obs.visibility).toBeCloseTo(1000, 5);
+    expect(obs.uv_index).toBe(8);
+  });
+
+  it("keeps null optional values null without attempting conversion", () => {
+    const obs = normalizeObservation(
+      { at: "2026-08-19T00:00:00Z", pressure: null },
+      {
+        observation_selector: "$",
+        fields: {
+          observed_at: { path: "$.at", format: "iso8601" },
+          pressure: { path: "$.pressure", unit: "Pa" },
+        },
+      },
+      { sourceId: "s", locationId: "l" },
+    );
+    expect(obs.pressure).toBeNull();
+  });
+
   it("returns null for missing optional fields", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",

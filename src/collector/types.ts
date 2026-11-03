@@ -68,7 +68,10 @@ export interface RequestConfig {
 export interface NormalizationFieldConfig {
   /** JSON path within the selected observation object, e.g. `$.metric.temp`. */
   path: string;
-  /** Source unit of the value, e.g. `F`, `kW/m2`. */
+  /**
+   * Source unit of the value, e.g. `F`, `kW/m2`. When omitted, the value is
+   * explicitly assumed to already use the field's canonical unit.
+   */
   unit?: string;
   /** Optional target unit to convert to; canonical unit is used if omitted. */
   convert_to?: string;
@@ -137,16 +140,16 @@ export interface NormalizedWeatherObservation {
   observed_at: string; // ISO-8601 UTC
   temperature: number | null; // °C
   solar_radiation: number | null; // W/m²
-  humidity: number | null;
+  humidity: number | null; // %
   pressure: number | null; // hPa
   wind_speed: number | null; // km/h
   wind_direction: number | null; // degrees
   wind_gust: number | null; // km/h
   precipitation_rate: number | null; // mm/h
   precipitation_total: number | null; // mm
-  uv_index: number | null;
+  uv_index: number | null; // dimensionless UV index
   cloud_cover: number | null; // %
-  visibility: number | null;
+  visibility: number | null; // m
   collected_at: string; // ISO-8601 UTC
 }
 
