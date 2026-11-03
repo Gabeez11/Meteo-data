@@ -49,7 +49,8 @@
       "required": ["observed_at"],
       "fields": {
         "observed_at": {
-          "path": "$.obsTimeUtc"
+          "path": "$.obsTimeUtc",
+          "format": "iso8601"
         },
         "temperature": {
           "path": "$.metric.temp",

@@ -6,7 +6,7 @@ import weatherComResponse from "./fixtures/weather-com-response.json";
 const weatherComNormalization: NormalizationConfig = {
   observation_selector: "$.observations[0]",
   fields: {
-    observed_at: { path: "$.obsTimeUtc" },
+    observed_at: { path: "$.obsTimeUtc", format: "iso8601" },
     temperature: { path: "$.metric.temp", unit: "C" },
     solar_radiation: { path: "$.solarRadiation", unit: "W/m2" },
     humidity: { path: "$.humidity", unit: "%" },
@@ -43,11 +43,81 @@ describe("normalization", () => {
     expect(obs.collected_at).toBeTruthy();
   });
 
+  it("normalizes ISO-8601 UTC and explicit offsets to UTC", () => {
+    const utc = normalizeObservation(
+      { at: "2026-08-19T00:02:05Z" },
+      { observation_selector: "$", fields: { observed_at: { path: "$.at", format: "iso8601" } } },
+      { sourceId: "s", locationId: "l" },
+    );
+    const offset = normalizeObservation(
+      { at: "2026-08-19T03:02:05+03:00" },
+      { observation_selector: "$", fields: { observed_at: { path: "$.at", format: "iso8601" } } },
+      { sourceId: "s", locationId: "l" },
+    );
+    expect(utc.observed_at).toBe("2026-08-19T00:02:05.000Z");
+    expect(offset.observed_at).toBe(utc.observed_at);
+  });
+
+  it("normalizes Unix timestamps in seconds and milliseconds", () => {
+    const normalizeAt = (at: number, format: "unix_seconds" | "unix_milliseconds") =>
+      normalizeObservation(
+        { at },
+        { observation_selector: "$", fields: { observed_at: { path: "$.at", format } } },
+        { sourceId: "s", locationId: "l" },
+      ).observed_at;
+    expect(normalizeAt(1787097725, "unix_seconds")).toBe("2026-08-19T00:02:05.000Z");
+    expect(normalizeAt(1787097725000, "unix_milliseconds")).toBe("2026-08-19T00:02:05.000Z");
+  });
+
+  it("interprets local ISO timestamps in the configured IANA timezone", () => {
+    const obs = normalizeObservation(
+      { at: "2026-08-18 21:02:05" },
+      {
+        observation_selector: "$",
+        fields: { observed_at: { path: "$.at", format: "iso8601", timezone: "America/Sao_Paulo" } },
+      },
+      { sourceId: "s", locationId: "l" },
+    );
+    expect(obs.observed_at).toBe("2026-08-19T00:02:05.000Z");
+  });
+
+  it("rejects local ISO timestamps without a timezone", () => {
+    expect(() => normalizeObservation(
+      { at: "2026-08-18 21:02:05" },
+      { observation_selector: "$", fields: { observed_at: { path: "$.at", format: "iso8601" } } },
+      { sourceId: "s", locationId: "l" },
+    )).toThrow(/configure an IANA timezone/);
+  });
+
+  it("rejects nonexistent and ambiguous local times during timezone transitions", () => {
+    const config: NormalizationConfig = {
+      observation_selector: "$",
+      fields: { observed_at: { path: "$.at", format: "iso8601", timezone: "America/New_York" } },
+    };
+    expect(() => normalizeObservation(
+      { at: "2026-03-08T02:30:00" }, config, { sourceId: "s", locationId: "l" },
+    )).toThrow(/does not exist/);
+    expect(() => normalizeObservation(
+      { at: "2026-11-01T01:30:00" }, config, { sourceId: "s", locationId: "l" },
+    )).toThrow(/ambiguous/);
+  });
+
+  it("keeps observed_at mandatory even if required excludes it", () => {
+    const config: NormalizationConfig = {
+      observation_selector: "$",
+      required: [],
+      fields: { observed_at: { path: "$.at", format: "iso8601" } },
+    };
+    expect(() => normalizeObservation(
+      {}, config, { sourceId: "s", locationId: "l" },
+    )).toThrow(NormalizationError);
+  });
+
   it("converts F to C during normalization (68F -> 20C)", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "F" },
         solar_radiation: { path: "$.solar", unit: "W/m2" },
       },
@@ -64,7 +134,7 @@ describe("normalization", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "C" },
         solar_radiation: { path: "$.solar", unit: "kW/m2" },
       },
@@ -81,7 +151,7 @@ describe("normalization", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "C" },
         solar_radiation: { path: "$.solar", unit: "W/m2" },
         humidity: { path: "$.humidity", unit: "%" },
@@ -99,7 +169,7 @@ describe("normalization", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "C" },
         solar_radiation: { path: "$.solar", unit: "W/m2" },
         humidity: { path: "$.humidity", unit: "%" },
@@ -121,7 +191,7 @@ describe("normalization", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "C" },
         solar_radiation: { path: "$.solar", unit: "W/m2" },
         humidity: { path: "$.humidity", unit: "%" },
@@ -141,7 +211,7 @@ describe("normalization", () => {
     const config: NormalizationConfig = {
       observation_selector: "$",
       fields: {
-        observed_at: { path: "$.obsAt" },
+        observed_at: { path: "$.obsAt", format: "iso8601" },
         temperature: { path: "$.temp", unit: "C" },
         solar_radiation: { path: "$.solar", unit: "W/m2" },
       },
@@ -158,7 +228,10 @@ describe("normalization", () => {
   it("throws when the observation selector does not match", () => {
     const config: NormalizationConfig = {
       observation_selector: "$.no-such",
-      fields: { temperature: { path: "$.temp", unit: "C" } },
+      fields: {
+        observed_at: { path: "$.obsAt", format: "iso8601" },
+        temperature: { path: "$.temp", unit: "C" },
+      },
     };
     expect(() =>
       normalizeObservation({ temp: 20 }, config, { sourceId: "s", locationId: "l" }),

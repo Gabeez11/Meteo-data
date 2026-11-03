@@ -2,6 +2,7 @@ import {
   ALL_WEATHER_FIELDS,
   type HttpMethod,
   type NormalizationConfig,
+  type TimestampFormat,
   type WeatherSourceConfig,
   type WeatherSourcesConfig,
 } from "./types";
@@ -19,6 +20,7 @@ import { getUnitConverter } from "./units";
 export class ConfigValidationError extends Error {}
 
 const VALID_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const TIMESTAMP_FORMATS: TimestampFormat[] = ["iso8601", "unix_seconds", "unix_milliseconds"];
 
 export function validateConfig(config: WeatherSourcesConfig): void {
   const errors: string[] = [];
@@ -140,6 +142,15 @@ function validateNormalization(
       errors.push(`${where}: field '${field}' must be an object`);
       continue;
     }
+    if (field === "observed_at") {
+      validateTimestampConfig(
+        fieldConfig as NonNullable<NormalizationConfig["fields"]["observed_at"]>,
+        where,
+        errors,
+      );
+    } else if ("format" in fieldConfig || "timezone" in fieldConfig) {
+      errors.push(`${where}: timestamp options 'format' and 'timezone' are only valid for 'observed_at'`);
+    }
     if (!fieldConfig.path || typeof fieldConfig.path !== "string") {
       errors.push(`${where}: field '${field}' is missing a valid 'path'`);
     } else {
@@ -156,6 +167,10 @@ function validateNormalization(
     }
   }
 
+  if (!normalization.fields.observed_at) {
+    errors.push(`${where}: normalization.fields.observed_at is required`);
+  }
+
   if (normalization.required) {
     if (!Array.isArray(normalization.required)) {
       errors.push(`${where}: 'normalization.required' must be an array`);
@@ -166,6 +181,34 @@ function validateNormalization(
         }
       }
     }
+  }
+}
+
+function validateTimestampConfig(
+  fieldConfig: NonNullable<NormalizationConfig["fields"]["observed_at"]>,
+  where: string,
+  errors: string[],
+): void {
+  if (!fieldConfig.format || !TIMESTAMP_FORMATS.includes(fieldConfig.format)) {
+    errors.push(
+      `${where}: field 'observed_at' must declare format (${TIMESTAMP_FORMATS.join(", ")})`,
+    );
+  }
+
+  if (fieldConfig.timezone !== undefined) {
+    if (typeof fieldConfig.timezone !== "string" || fieldConfig.timezone.trim() === "") {
+      errors.push(`${where}: field 'observed_at' timezone must be a non-empty IANA timezone`);
+    } else {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: fieldConfig.timezone }).format(0);
+      } catch {
+        errors.push(`${where}: field 'observed_at' has invalid timezone '${fieldConfig.timezone}'`);
+      }
+    }
+  }
+
+  if (fieldConfig.format !== "iso8601" && fieldConfig.timezone !== undefined) {
+    errors.push(`${where}: field 'observed_at' timezone is only valid with format 'iso8601'`);
   }
 }
 

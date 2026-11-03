@@ -74,9 +74,18 @@ export interface NormalizationFieldConfig {
   convert_to?: string;
 }
 
+export type TimestampFormat = "iso8601" | "unix_seconds" | "unix_milliseconds";
+
+/** Explicit timestamp interpretation is required for every source. */
+export interface TimestampFieldConfig extends NormalizationFieldConfig {
+  format: TimestampFormat;
+  /** IANA timezone used for ISO-8601 timestamps without an explicit offset. */
+  timezone?: string;
+}
+
 export type NormalizationFieldsConfig = Partial<
-  Record<WeatherField, NormalizationFieldConfig>
->;
+  Record<Exclude<WeatherField, "observed_at">, NormalizationFieldConfig>
+> & { observed_at: TimestampFieldConfig };
 
 export interface NormalizationConfig {
   /**
