@@ -2,6 +2,11 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { getHourlyAverages, getStations } from "./aggregate";
 import { AGGREGATE_COLUMNS } from "./aggregate";
 import { getDashboardSummaries } from "./summary";
+import {
+  COMPARISON_LOOKBACK_MINUTES,
+  COMPARISON_TOLERANCE_MINUTES,
+  getWeatherSourceComparisons,
+} from "../db/comparisons";
 
 function clampHours(value: string | null): number | undefined {
   if (!value) return undefined;
@@ -40,7 +45,7 @@ function pathMatches(url: URL, path: string): boolean {
  * if the path is not handled by the dashboard API.
  *
  * `emergency` carries the D1 read-conservation flags (docs/emergency-d1-mode.md):
- * when `readOnlyEmergency` is true, the two expensive raw-scan endpoints are
+ * when `readOnlyEmergency` is true, the raw-observation endpoints are
  * answered with a 503 maintenance response WITHOUT touching D1.
  */
 export async function handleApi(
@@ -81,6 +86,23 @@ export async function handleApi(
         columns: AGGREGATE_COLUMNS,
         rows: aggregates,
         filters: { hours: hours ?? 24, station: station ?? null },
+      },
+      200,
+      origin,
+    );
+  }
+
+  if (pathMatches(url, "/api/quality/comparisons")) {
+    if (emergency.readOnlyEmergency) return emergencyResponse();
+    const comparisons = await getWeatherSourceComparisons(db);
+    return json(
+      {
+        comparisons,
+        filters: {
+          time_tolerance_minutes: COMPARISON_TOLERANCE_MINUTES,
+          lookback_minutes: COMPARISON_LOOKBACK_MINUTES,
+          excluded_variables: ["precipitation_total", "precipitation_rate"],
+        },
       },
       200,
       origin,

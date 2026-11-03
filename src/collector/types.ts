@@ -62,6 +62,11 @@ export interface RequestConfig {
    * `stationId` value. If omitted, no per-location parameter is injected.
    */
   location_param?: string;
+  /**
+   * Map request parameter names to per-location property names when multiple
+   * dynamic values are needed (e.g. `{ latitude: "latitude", longitude: "longitude" }`).
+   */
+  location_params?: Record<string, string>;
 }
 
 /** Per-source normalization rules mapping canonical fields to response paths. */
@@ -113,6 +118,8 @@ export interface NormalizationConfig {
 export interface WeatherLocationConfig {
   id: string;
   name: string;
+  /** Stable source-specific identifier used when no single `location_param` is configured. */
+  external_id?: string;
   latitude?: number;
   longitude?: number;
   [paramName: string]: string | number | boolean | null | undefined;

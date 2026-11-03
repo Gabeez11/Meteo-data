@@ -119,6 +119,26 @@ function validateRequest(
   ) {
     errors.push(`${where}: 'request.location_param' must be a non-empty string when provided`);
   }
+  if (request.location_params !== undefined) {
+    if (
+      !request.location_params ||
+      typeof request.location_params !== "object" ||
+      Array.isArray(request.location_params)
+    ) {
+      errors.push(`${where}: 'request.location_params' must be an object when provided`);
+    } else {
+      for (const [parameterName, locationProperty] of Object.entries(request.location_params)) {
+        if (parameterName.trim() === "") {
+          errors.push(`${where}: 'request.location_params' parameter names must not be empty`);
+        }
+        if (typeof locationProperty !== "string" || locationProperty.trim() === "") {
+          errors.push(
+            `${where}: location property for request parameter '${parameterName}' must be a non-empty string`,
+          );
+        }
+      }
+    }
+  }
   if (
     request.timeout_ms !== undefined &&
     (!Number.isFinite(request.timeout_ms) || request.timeout_ms <= 0)
@@ -284,7 +304,7 @@ function validateLocations(
     const param = typeof configuredParam === "string" && configuredParam.trim() !== ""
       ? configuredParam
       : undefined;
-    const externalIdValue = param ? location[param] : location.id;
+    const externalIdValue = param ? location[param] : (location.external_id ?? location.id);
     if (
       externalIdValue === undefined ||
       externalIdValue === null ||
@@ -297,9 +317,26 @@ function validateLocations(
           `${locWhere}: missing required location parameter '${param}' (needed by request.location_param)`,
         );
       } else {
-        errors.push(`${locWhere}: location id cannot be used as a valid external identifier`);
+        errors.push(`${locWhere}: missing or invalid external location identifier`);
       }
       return;
+    }
+
+    for (const [parameterName, locationProperty] of Object.entries(
+      source.request?.location_params ?? {},
+    )) {
+      const value = location[locationProperty];
+      if (
+        value === undefined ||
+        value === null ||
+        (typeof value === "string" && value.trim() === "") ||
+        (typeof value === "number" && !Number.isFinite(value)) ||
+        !["string", "number", "boolean"].includes(typeof value)
+      ) {
+        errors.push(
+          `${locWhere}: missing or invalid location property '${locationProperty}' (needed by request parameter '${parameterName}')`,
+        );
+      }
     }
 
     const externalId = String(externalIdValue);
