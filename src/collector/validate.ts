@@ -30,9 +30,11 @@ export function validateConfig(config: WeatherSourcesConfig): void {
   }
 
   const sourceIds = new Set<string>();
+  const locationIds = new Map<string, string>();
+  const externalIds = new Map<string, Map<string, string>>();
   config.forEach((source, index) => {
     const where = `source #${index + 1}`;
-    validateSource(source, where, sourceIds, errors);
+    validateSource(source, where, sourceIds, locationIds, externalIds, errors);
   });
 
   if (errors.length > 0) {
@@ -46,6 +48,8 @@ function validateSource(
   source: WeatherSourceConfig,
   where: string,
   sourceIds: Set<string>,
+  locationIds: Map<string, string>,
+  externalIds: Map<string, Map<string, string>>,
   errors: string[],
 ): void {
   if (!source || typeof source !== "object") {
@@ -55,6 +59,8 @@ function validateSource(
 
   if (!source.id || typeof source.id !== "string" || source.id.trim() === "") {
     errors.push(`${where}: missing or invalid 'id'`);
+  } else if (source.id !== source.id.trim()) {
+    errors.push(`${where}: 'id' must not have leading or trailing whitespace`);
   } else if (sourceIds.has(source.id)) {
     errors.push(`${where}: duplicate source id '${source.id}'`);
   } else {
@@ -84,7 +90,13 @@ function validateSource(
   if (!Array.isArray(source.locations) || source.locations.length === 0) {
     errors.push(`${where}: must define at least one 'location'`);
   } else {
-    validateLocations(source, `${where} (${source.id ?? "unknown"})`, errors);
+    validateLocations(
+      source,
+      `${where} (${source.id ?? "unknown"})`,
+      locationIds,
+      externalIds,
+      errors,
+    );
   }
 }
 
@@ -100,6 +112,12 @@ function validateRequest(
   }
   if (!request.url || typeof request.url !== "string" || request.url.trim() === "") {
     errors.push(`${where}: missing or invalid 'request.url'`);
+  }
+  if (
+    request.location_param !== undefined &&
+    (typeof request.location_param !== "string" || request.location_param.trim() === "")
+  ) {
+    errors.push(`${where}: 'request.location_param' must be a non-empty string when provided`);
   }
   if (
     request.timeout_ms !== undefined &&
@@ -177,14 +195,19 @@ function validateNormalization(
     errors.push(`${where}: normalization.fields.observed_at is required`);
   }
 
-  if (normalization.required) {
+  if (normalization.required !== undefined) {
     if (!Array.isArray(normalization.required)) {
       errors.push(`${where}: 'normalization.required' must be an array`);
     } else {
       for (const req of normalization.required) {
         if (!(ALL_WEATHER_FIELDS as string[]).includes(req)) {
           errors.push(`${where}: unknown required field '${req}'`);
+        } else if (!normalization.fields[req as keyof typeof normalization.fields]) {
+          errors.push(`${where}: required field '${req}' has no normalization mapping`);
         }
+      }
+      if (new Set(normalization.required).size !== normalization.required.length) {
+        errors.push(`${where}: 'normalization.required' must not contain duplicate fields`);
       }
     }
   }
@@ -218,8 +241,20 @@ function validateTimestampConfig(
   }
 }
 
-function validateLocations(source: WeatherSourceConfig, where: string, errors: string[]): void {
-  const locationIds = new Set<string>();
+function validateLocations(
+  source: WeatherSourceConfig,
+  where: string,
+  globalLocationIds: Map<string, string>,
+  externalIdsBySource: Map<string, Map<string, string>>,
+  errors: string[],
+): void {
+  const sourceId = typeof source.id === "string" ? source.id : "<invalid-source>";
+  let sourceExternalIds = externalIdsBySource.get(sourceId);
+  if (!sourceExternalIds) {
+    sourceExternalIds = new Map<string, string>();
+    externalIdsBySource.set(sourceId, sourceExternalIds);
+  }
+
   source.locations.forEach((location, i) => {
     const locWhere = `${where} / location #${i + 1}`;
     if (!location || typeof location !== "object") {
@@ -228,23 +263,53 @@ function validateLocations(source: WeatherSourceConfig, where: string, errors: s
     }
     if (typeof location.id !== "string" || location.id.trim() === "") {
       errors.push(`${locWhere}: missing or invalid 'id'`);
-    } else if (locationIds.has(location.id)) {
-      errors.push(`${locWhere}: duplicate location id '${location.id}'`);
     } else {
-      locationIds.add(location.id);
+      if (location.id !== location.id.trim()) {
+        errors.push(`${locWhere}: 'id' must not have leading or trailing whitespace`);
+      }
+      const priorLocation = globalLocationIds.get(location.id);
+      if (priorLocation) {
+        errors.push(
+          `${locWhere}: duplicate global location id '${location.id}' (already defined at ${priorLocation})`,
+        );
+      } else {
+        globalLocationIds.set(location.id, locWhere);
+      }
     }
     if (typeof location.name !== "string" || location.name.trim() === "") {
       errors.push(`${locWhere}: missing or invalid 'name'`);
     }
 
-    if (source.request?.location_param) {
-      const param = source.request.location_param;
-      const value = location[param];
-      if (value === undefined || value === null || value === "") {
+    const configuredParam = source.request?.location_param;
+    const param = typeof configuredParam === "string" && configuredParam.trim() !== ""
+      ? configuredParam
+      : undefined;
+    const externalIdValue = param ? location[param] : location.id;
+    if (
+      externalIdValue === undefined ||
+      externalIdValue === null ||
+      (typeof externalIdValue === "string" && externalIdValue.trim() === "") ||
+      (typeof externalIdValue === "number" && !Number.isFinite(externalIdValue)) ||
+      !["string", "number", "boolean"].includes(typeof externalIdValue)
+    ) {
+      if (param) {
         errors.push(
           `${locWhere}: missing required location parameter '${param}' (needed by request.location_param)`,
         );
+      } else {
+        errors.push(`${locWhere}: location id cannot be used as a valid external identifier`);
       }
+      return;
+    }
+
+    const externalId = String(externalIdValue);
+    const priorExternalId = sourceExternalIds.get(externalId);
+    if (priorExternalId) {
+      errors.push(
+        `${locWhere}: duplicate external location id '${externalId}' for source '${sourceId}' (already defined at ${priorExternalId})`,
+      );
+    } else {
+      sourceExternalIds.set(externalId, locWhere);
     }
   });
 }
